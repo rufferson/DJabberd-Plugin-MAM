@@ -415,6 +415,15 @@ sub has_more {
     }
 }
 
+sub max {
+    my $self = shift;
+    if(@_) {
+	$self->{max} = $_[0];
+    } else {
+	return $self->{max};
+    }
+}
+
 sub count {
     my $self = shift;
     if(@_) {
@@ -439,6 +448,24 @@ sub last {
 	$self->{last} = $_[0];
     } else {
 	return ($self->{last} or '');
+    }
+}
+
+sub before {
+    my $self = shift;
+    if(@_) {
+	$self->{before} = $_[0];
+    } else {
+	return ($self->{before} or '');
+    }
+}
+
+sub after {
+    my $self = shift;
+    if(@_) {
+	$self->{after} = $_[0];
+    } else {
+	return ($self->{after} or '');
     }
 }
 
