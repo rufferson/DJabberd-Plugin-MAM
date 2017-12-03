@@ -199,12 +199,10 @@ sub query {
     my $node = $query->attr('{}node');
     my $form = DJabberd::Form->new($x) if($x);
     my $rsm = DJabberd::Set->new($r);
-    $rsm->count($rsm->count + 1) if($rsm->count); # more_data indicator
+    $rsm->max($rsm->max + 1) if($rsm->max); # more_data indicator
     my @msgs = $self->query_archive($user->as_bare_string, $form, $rsm);
     if(@msgs) {
-	my $count = $rsm->count;
-	if($count && scalar(@msgs) == $count) {
-		$count--;
+	if($rsm->max && scalar(@msgs) == $rsm->max) {
 		pop(@msgs);
 		$rsm->has_more(1);
 	}
@@ -215,14 +213,14 @@ sub query {
 		    id => $self->id,
 		    to => $user->as_string
 		},
-		[DJabberd::XMLElement->new($query->ns, 'result',
+		[DJabberd::XMLElement->new($query->namespace, 'result',
 		    {
 			id => $msg->{id},
 			%queryid
 		    },
 		    [
 			DJabberd::Plugin::Carbons::wrap_fwd(
-			    DJabberd::Delivry::Offline::delay($msg->{ts}),
+			    DJabberd::Delivery::OfflineStorage::delay($msg->{ts}),
 			    DJabberd::XMLElement->new('jabber:client', 'message',
 				{
 				    to => $msg->{to},
@@ -235,9 +233,11 @@ sub query {
 		    ]
 		)]
 	    );
-	    $iq->connection->write_stanza($stanza);
+	    my $xml = $stanza->as_xml;
+	    $iq->connection->log_outgoing_data($xml);
+	    $iq->connection->write(\$xml);
 	}
-	$rsm->count($count);
+	$rsm->count(scalar(@msgs));
 	$rsm->first($msgs[0]->{id});
 	$rsm->last($msgs[-1]->{id});
     } else {
