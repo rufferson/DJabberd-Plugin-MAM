@@ -146,12 +146,12 @@ sub vh {
 sub archive {
     my $self = shift;
     my $msg = shift;
-    my $type = $msg->attr('{}type');
-    return unless($type && ($type eq 'normal' || $type eq 'chat'));
-    my ($body) = grep{$_->element_name eq 'body'}$msg->children_elements;
-    return unless($body && ref($body));
+    return unless(DJabberd::Plugin::Carbons::eligible($msg, 313));
     my @for = $self->archivable($msg);
     return unless(@for && $for[0]);
+    my ($body) = grep{$_->element_name eq 'body'}$msg->children_elements;
+    # Technically we shouldn't, but as long as we store only body - it's ok
+    return unless($body);
     my $ts = Time::HiRes::clock_gettime(CLOCK_REALTIME);
     my $id = $self->store_archive($msg->from,$msg->to,$body,$ts,'chat',@for);
     $logger->debug("The message was ".(($id)?"stored under $id":"not stored"));
@@ -215,6 +215,7 @@ sub query {
 		},
 		[DJabberd::XMLElement->new($query->namespace, 'result',
 		    {
+			xmlns => $query->namespace,
 			id => $msg->{id},
 			%queryid
 		    },
@@ -237,7 +238,6 @@ sub query {
 	    $iq->connection->log_outgoing_data($xml);
 	    $iq->connection->write(\$xml);
 	}
-	$rsm->count(scalar(@msgs));
 	$rsm->first($msgs[0]->{id});
 	$rsm->last($msgs[-1]->{id});
     } else {
@@ -345,7 +345,7 @@ sub gen_sid {
     my $from = shift;
     my $nvid = shift;
     my $time = shift || time;
-    return Digest::SHA::hmac_sha256_base64("$from:$time",$nvid);
+    return Digest::SHA::hmac_sha256_base64("$from:$time",sprintf("%02d",rand(10)),$nvid);
 }
 
 sub set_sid {
@@ -354,10 +354,12 @@ sub set_sid {
     my $jid = shift;
     my @els = $msg->children_elements;
     $msg->set_raw();
+    # Filter out *our* stanza-id childs
     for my $el(@els) {
-	$msg->push_child($el) unless($el->element eq '{'.NSSID.'}stanza-id');
+	$msg->push_child($el) unless($el->element eq '{'.NSSID.'}stanza-id' && $el->attr('{}by') eq $jid->as_bare_string);
     }
     $msg->push_child(DJabberd::XMLElement->new(NSSID, 'stanza-id', {
+	xmlns => NSSID,
 	by => $jid->as_bare_string,
 	id => $sid
     }));
