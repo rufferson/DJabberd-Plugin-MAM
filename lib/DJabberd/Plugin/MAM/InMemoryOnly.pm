@@ -69,14 +69,19 @@ sub query_archive {
 	shift(@{$s->{users}->{$bare}});
     }
     # iterating through user archive
-    $logger->debug("Start: ".join(',',$form->value('start')));
-    my $start = DJabberd::Plugin::MAM::strpiso8601time([$form->value('start')]->[0])
-	if($form && $form->field('start') && $form->value('start'));
-    $logger->debug("End: ".join(',',$form->value('end')));
-    my $stop = DJabberd::Plugin::MAM::strpiso8601time([$form->value('end')]->[0])
-	if($form && $form->field('end') && $form->value('end'));
-    my $jid = DJabberd::JID->new([$form->value('with')]->[0])
-	if($form && $form->field('with') && $form->value('with'));
+    my ($start, $stop, $jid);
+    if($form && $form->field('start') && $form->value('start')) {
+	$logger->debug("Start: ".join(',',$form->value('start')));
+	$start = DJabberd::Plugin::MAM::strpiso8601time([$form->value('start')]->[0])
+    }
+    if($form && $form->field('end') && $form->value('end')) {
+	$logger->debug("End: ".join(',',$form->value('end')));
+	$stop = DJabberd::Plugin::MAM::strpiso8601time([$form->value('end')]->[0])
+    }
+    if($form && $form->field('with') && $form->value('with')) {
+	$logger->debug("By: ".join(',',$form->value('with')));
+	$jid = DJabberd::JID->new([$form->value('with')]->[0])
+    }
     foreach my$sid(@{$s->{users}->{$bare}}) {
 	next if($start && $start > $s->{msgs}->{$sid}->{ts});
 	last if($stop && $stop < $s->{msgs}->{$sid}->{ts});
@@ -86,7 +91,7 @@ sub query_archive {
 	    $after = undef;
 	    next;
 	}
-	last if($rsm->max && ($#ret+1)==$rsm->max);
+	last if($rsm && $rsm->max && ($#ret+1)==$rsm->max);
 	if($jid) {
 	    my $m = $s->{msgs}->{$sid};
 	    my $from = DJabberd::JID->new($m->{from});
