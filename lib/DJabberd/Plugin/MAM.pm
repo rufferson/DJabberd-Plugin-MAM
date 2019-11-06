@@ -154,9 +154,13 @@ sub archive {
     return unless($body);
     my $ts = Time::HiRes::clock_gettime(CLOCK_REALTIME);
     # We may archive from s2s delivery
-    my $arc_body = $body->clone;
-    $arc_body->replace_ns('jabber:server','jabber:client');
-    my $id = $self->store_archive($msg->from,$msg->to,$arc_body,$ts,'chat',@for);
+    my $arc_el = $body->clone;
+    $arc_el->replace_ns('jabber:server','jabber:client');
+    my $payload = $arc_el->as_xml();
+    # We also need to store origin-id for sent msgs dedup
+    ($arc_el) = grep{$_->element_name eq 'origin-id'}$msg->children_elements;
+    $payload .= $arc_el->as_xml() if($arc_el);
+    my $id = $self->store_archive($msg->from,$msg->to,$payload,$ts,'chat',@for);
     $logger->debug("The message was ".(($id)?"stored under $id":"not stored"));
     return unless($id);
     return unless(grep{$msg->to_jid->as_bare_string eq $_->as_bare_string}@for);
@@ -232,7 +236,7 @@ sub query {
 				    type => $msg->{type},
 				    xmlns => 'jabber:client'
 				},
-				[ $msg->{body} ]
+				[], $msg->{body}
 			    )
 			)
 		    ]

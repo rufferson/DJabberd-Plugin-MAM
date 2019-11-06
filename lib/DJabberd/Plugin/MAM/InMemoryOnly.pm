@@ -25,7 +25,7 @@ sub store_archive {
     my $time = shift;
     my $type = shift;
     my @usrs = @_;
-    $logger->debug("Store message from $from to $rcpt at $time for ".join(',',@usrs)." with ".$body->as_xml);
+    $logger->debug("Store message from $from to $rcpt at $time for ".join(',',@usrs)." with ".$body);
     my $sid = DJabberd::SID::gen_sid($from,$time,$self->{__store}->{id}++);
     my $msg = {ts=>$time, from=>$from, to=>$rcpt, id=>$sid, body=>$body, type=>$type};
     my $s = $self->{__store};
