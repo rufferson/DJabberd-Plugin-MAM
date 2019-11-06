@@ -153,7 +153,10 @@ sub archive {
     # Technically we shouldn't, but as long as we store only body - it's ok
     return unless($body);
     my $ts = Time::HiRes::clock_gettime(CLOCK_REALTIME);
-    my $id = $self->store_archive($msg->from,$msg->to,$body,$ts,'chat',@for);
+    # We may archive from s2s delivery
+    my $arc_body = $body->clone;
+    $arc_body->replace_ns('jabber:server','jabber:client');
+    my $id = $self->store_archive($msg->from,$msg->to,$arc_body,$ts,'chat',@for);
     $logger->debug("The message was ".(($id)?"stored under $id":"not stored"));
     return unless($id);
     return unless(grep{$msg->to_jid->as_bare_string eq $_->as_bare_string}@for);
@@ -226,7 +229,8 @@ sub query {
 				{
 				    to => $msg->{to},
 				    from => $msg->{from},
-				    type => $msg->{type}
+				    type => $msg->{type},
+				    xmlns => 'jabber:client'
 				},
 				[ $msg->{body} ]
 			    )
@@ -245,7 +249,9 @@ sub query {
 	$rsm->first(undef);
 	$rsm->last(undef);
     }
-    my $fin = DJabberd::XMLElement->new($query->namespace,'fin',{},[$rsm->as_element()]);
+    my %atts = ( xmlns => $query->namespace );
+    $atts{complete} = 'true' unless($rsm->{has_more});
+    my $fin = DJabberd::XMLElement->new($query->namespace,'fin',\%atts,[$rsm->as_element()]);
     $iq->send_result_raw($fin->as_xml);
 }
 
@@ -475,7 +481,6 @@ sub as_element {
     my $self = shift;
     my %atts;
     my @kids;
-    $atts{complete} = 'true' unless($self->{has_more});
     push(@kids,"<first index=\"".($self->{index} or '0')."\">$self->{first}</first>")
 	if($self->{first});
     push(@kids,"<last>$self->{last}</last>") if($self->{last});
