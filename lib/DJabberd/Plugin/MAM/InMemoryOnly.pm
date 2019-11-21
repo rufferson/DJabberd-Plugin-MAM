@@ -62,7 +62,7 @@ sub query_archive {
     $logger->debug("query_archive[".scalar(@{$s->{users}->{$bare}||=[]})."] for $bare");
     my $after = $rsm->after;
     my $before = $rsm->before;
-    # cleanup retention trail, reset conditions
+    # cleanup retention trail, reset conditions if they are in the trail
     while(scalar(@{$s->{users}->{$bare}}) && !exists($s->{msgs}->{$s->{users}->{$bare}->[0]})) {
 	$after = undef if($after && $after eq $s->{users}->{$bare}->[0]);
 	return @ret if($before && $before eq $s->{users}->{$bare}->[0]);
@@ -109,6 +109,7 @@ sub query_archive {
 	push(@ret, $s->{msgs}->{$sid});
 	$logger->debug("Message $sid passed filter, adding to response");
     }
+    return undef if($after || ($before && !@ret));
     return @ret;
 }
 

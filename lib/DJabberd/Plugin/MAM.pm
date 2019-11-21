@@ -208,7 +208,10 @@ sub query {
     my $rsm = DJabberd::Set->new($r);
     $rsm->max($rsm->max + 1) if($rsm->max); # more_data indicator
     my @msgs = $self->query_archive($user->as_bare_string, $form, $rsm);
-    if(@msgs) {
+    if(@msgs && !defined $msgs[0]) {
+	# rsm before/after freaked out results, need to item-not-found
+	return $iq->send_error("<error type='cancel'><item-not-found xmlns='urn:ietf:params:xml:ns:xmpp-stanzas'/></error>");
+    } elsif(@msgs) {
 	if($rsm->max && scalar(@msgs) == $rsm->max) {
 		pop(@msgs);
 		$rsm->has_more(1);
