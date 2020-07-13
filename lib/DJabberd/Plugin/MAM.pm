@@ -77,7 +77,7 @@ sub finalize {
     my $self = shift;
     $self->{default} ||= 'never';
     $self->{retain_sec} = 60*60*24 unless($self->{retain_num} || $self->{retain_sec});
-    $self->{seqid} = 0;
+    $self->{seqid} = int(rand(2**32));
 }
 
 sub run_before {
@@ -144,8 +144,7 @@ sub vh {
 }
 
 sub archive {
-    my $self = shift;
-    my $msg = shift;
+    my ($self, $msg) = @_;
     return unless(DJabberd::Plugin::Carbons::eligible($msg, 313));
     my @for = $self->archivable($msg);
     return unless(@for && $for[0]);
@@ -156,11 +155,12 @@ sub archive {
     # We may archive from s2s delivery
     my $arc_el = $body->clone;
     $arc_el->replace_ns('jabber:server','jabber:client');
-    my $payload = $arc_el->as_xml();
-    # We also need to store origin-id for sent msgs dedup
+    my $data = $arc_el->as_xml();
+    # We also need to store id and origin-id for sent msgs dedup
     ($arc_el) = grep{$_->element_name eq 'origin-id'}$msg->children_elements;
-    $payload .= $arc_el->as_xml() if($arc_el);
-    my $id = $self->store_archive($msg->from,$msg->to,$payload,$ts,'chat',@for);
+    $data .= $arc_el->as_xml() if($arc_el);
+    my $type = ($msg->{attrs}{'{}type'} || 'normal');
+    my $id = $self->store_archive($msg->from, $msg->to, $type, $msg->{attrs}{'{}id'}, $data, $ts, @for);
     $logger->debug("The message was ".(($id)?"stored under $id":"not stored"));
     return unless($id);
     return unless(grep{$msg->to_jid->as_bare_string eq $_->as_bare_string}@for);
@@ -168,13 +168,7 @@ sub archive {
 }
 
 sub store_archive {
-    my $self = shift;
-    my $from = shift;
-    my $rcpt = shift;
-    my $body = shift;
-    my $time = shift;
-    my $type = shift;
-    my @usrs = @_;
+    my ($self, $from, $rcpt, $type, $oid, $data, $time, @usrs) = @_;
     $logger->warn("Message store not implemented");
     return undef;
 }
@@ -185,7 +179,7 @@ sub query_archive {
     my $form = shift;
     my $rsm = shift;
     my @ret = ();
-    # ({ ts=>gmtime, from=>jid, to=>jid, id=>uuid, body=>msg_body, type=>msg_type},)
+    # ({ ts=>gmtime, from=>jid, to=>jid, id=>stanza_id, body=>xml_string, type=>msg_type, oid=>origin_id},)
     $logger->error("query_archive not implemented");
     return @ret;
 }
@@ -198,11 +192,15 @@ sub id {
 sub query {
     my $self = shift;
     my $iq = shift;
-    my $query = $iq->query;
     my $user = $iq->connection->bound_jid;
-    $logger->debug("Query[".$user->as_string."]: ".$query->innards_as_xml);
+    if(!$user->eq($iq->to_jid)) {
+	$iq->send_error("<error type='cancel'><forbidden></error>");
+	return;
+    }
+    my $query = $iq->query;
     my ($x) = grep{$_->element eq '{jabber:x:data}x'}$query->children_elements;
     my ($r) = grep{$_->element eq $DJabberd::Set::Element}$query->children_elements;
+    $logger->debug("Query[".$user->as_string."]: ".($x && $x->as_xml || '').($r && $r->as_xml || ''));
     my $node = $query->attr('{}node');
     my $form = DJabberd::Form->new($x) if($x);
     my $rsm = DJabberd::Set->new($r);
@@ -213,15 +211,21 @@ sub query {
 	return $iq->send_error("<error type='cancel'><item-not-found xmlns='urn:ietf:params:xml:ns:xmpp-stanzas'/></error>");
     } elsif(@msgs) {
 	if($rsm->max && scalar(@msgs) == $rsm->max) {
+	    if(defined $rsm->before && $rsm->before eq '') {
+		# reversed query
+		shift(@msgs);
+	    } else {
+		# normal query
 		pop(@msgs);
-		$rsm->has_more(1);
+	    }
+	    $rsm->has_more(1);
 	}
 	my %queryid = (queryid=>$query->attr('{}queryid')) if($query->attr('{}queryid'));
 	foreach my $msg(@msgs) {
 	    my $stanza = DJabberd::Message->new('jabber:client','message',
 		{
-		    id => $self->id,
-		    to => $user->as_string
+		    xmlns => 'jabber:client',
+		    '{}to' => $user->as_string
 		},
 		[DJabberd::XMLElement->new($query->namespace, 'result',
 		    {
@@ -234,6 +238,7 @@ sub query {
 			    DJabberd::Delivery::OfflineStorage::delay($msg->{ts}),
 			    DJabberd::XMLElement->new('jabber:client', 'message',
 				{
+				    ($msg->{oid}?(id => $msg->{oid}):()),
 				    to => $msg->{to},
 				    from => $msg->{from},
 				    type => $msg->{type},
@@ -280,8 +285,12 @@ sub gen_pref_list {
 sub prefs {
     my $self = shift;
     my $iq = shift;
-    my $prefs = $iq->first_element;
+    my $prefs = $iq->first_element->clone;
     $logger->debug("Prefs: ".$iq->type);
+    if(!$iq->connection->bound_jid->eq($iq->to_jid)) {
+	$iq->send_error("<error type='cancel'><forbidden></error>");
+	return;
+    }
     if($iq->type eq 'get') {
 	my %pref = $self->get_prefs($iq->connection->bound_jid->as_bare_string);
 	$prefs->set_attr('default',$pref{default});
@@ -300,9 +309,7 @@ sub grep_jid {
 }
 
 sub check_jid {
-    my $self = shift;
-    my $user = shift;
-    my $for = shift;
+    my ($self, $user, $for) = @_;
     if($self->vh->handles_jid($user)) {
 	my %pref = $self->get_prefs($user->as_bare_string);
 	return ($user) if(grep_jid($for, @{$pref{always}}));
@@ -323,8 +330,7 @@ sub check_jid {
 }
 
 sub archivable {
-    my $self = shift;
-    my $msg = shift;
+    my ($self, $msg) = @_;
     return (
 	    $self->check_jid($msg->to_jid, $msg->from_jid),
 	    $self->check_jid($msg->from_jid, $msg->to_jid)
@@ -354,11 +360,8 @@ use constant {
 
 
 sub gen_sid {
-    my $self = shift;
-    my $from = shift;
-    my $nvid = shift;
-    my $time = shift || time;
-    return Digest::SHA::hmac_sha256_base64("$from:$time",sprintf("%02d",rand(10)),$nvid);
+    my $time = $_[3] || time;
+    return Digest::SHA::hmac_sha256_base64("$_[1]:$time",sprintf("%02d",rand(10)),$_[2]);
 }
 
 sub set_sid {
@@ -380,9 +383,7 @@ sub set_sid {
 
 package DJabberd::Set;
 
-use constant {
-    NSRSM => 'http://jabber.org/protocol/rsm'
-};
+use constant NSRSM => 'http://jabber.org/protocol/rsm';
 
 our $Element = '{'.NSRSM.'}set';
 
@@ -406,8 +407,10 @@ sub new {
 		    $from->{max} += 0;
 		} elsif($el->element_name eq 'before') {
 		    ($from->{before}) = grep{/\S/}$el->children;
+		    $from->{before} = '' unless($from->{before});
 		} elsif($el->element_name eq 'after') {
 		    ($from->{after}) = grep{/\S/}$el->children;
+		    $from->{after} = '' unless($from->{after});
 		} elsif($el->element_name eq 'first') {
 		    ($from->{first}) = grep{/\S/}$el->children;
 		    $from->{index} = $el->attr('{}index')if(defined $el->attr('{}index'));
@@ -471,7 +474,7 @@ sub before {
     if(@_) {
 	$self->{before} = $_[0];
     } else {
-	return ($self->{before} or '');
+	return $self->{before};
     }
 }
 
@@ -480,13 +483,13 @@ sub after {
     if(@_) {
 	$self->{after} = $_[0];
     } else {
-	return ($self->{after} or '');
+	return $self->{after};
     }
 }
 
 sub as_element {
     my $self = shift;
-    my %atts;
+    my %atts = (xmlns=>NSRSM);
     my @kids;
     push(@kids,"<first index=\"".($self->{index} or '0')."\">$self->{first}</first>")
 	if($self->{first});
