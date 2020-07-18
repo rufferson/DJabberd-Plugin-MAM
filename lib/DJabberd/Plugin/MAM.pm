@@ -193,7 +193,7 @@ sub query {
     my $self = shift;
     my $iq = shift;
     my $user = $iq->connection->bound_jid;
-    if(!$user->eq($iq->to_jid)) {
+    if($iq->to && !$user->eq($iq->to_jid)) {
 	$iq->send_error("<error type='cancel'><forbidden></error>");
 	return;
     }

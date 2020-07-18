@@ -147,7 +147,7 @@ my $check_rsm = sub {
     }
     return -1;
 };
-$iq->set_to($my);
+$iq->set_to(undef);
 $iq->process($fc);
 
 ##
