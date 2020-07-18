@@ -75,9 +75,9 @@ $iq->process($fc);
 $test = $forbidden;
 $iq->process($fc);
 
-# Reset back and recheck
+# Also check with implied own bare (no "to")
 $test = $res_ok;
-$iq->set_to($my);
+$iq->set_to(undef);
 $iq->process($fc);
 
 # Test pref set - currently not implemented

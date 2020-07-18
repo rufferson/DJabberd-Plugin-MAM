@@ -287,7 +287,7 @@ sub prefs {
     my $iq = shift;
     my $prefs = $iq->first_element->clone;
     $logger->debug("Prefs: ".$iq->type);
-    if(!$iq->connection->bound_jid->eq($iq->to_jid)) {
+    if($iq->to && !$iq->connection->bound_jid->eq($iq->to_jid)) {
 	$iq->send_error("<error type='cancel'><forbidden></error>");
 	return;
     }
