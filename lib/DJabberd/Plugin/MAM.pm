@@ -189,12 +189,19 @@ sub id {
     return Digest::SHA::hmac_sha256_base64("mam".time,$self->{seqid}++);
 }
 
+sub check_access {
+    my ($self, $node, $jid) = @_;
+    return 1 if($node eq $jid->as_bare_string);
+    return 0;
+}
+
 sub query {
     my $self = shift;
     my $iq = shift;
     my $user = $iq->connection->bound_jid;
-    if($iq->to && !$user->eq($iq->to_jid)) {
-	$iq->send_error("<error type='cancel'><forbidden></error>");
+    my $node = $iq->to || $user->as_bare_string;
+    if(!$self->check_access($node, $user)) {
+	$iq->send_error("<error type='cancel'><forbidden xmlns='urn:ietf:params:xml:ns:xmpp-stanzas'/></error>");
 	return;
     }
     my $query = $iq->query;
@@ -205,7 +212,7 @@ sub query {
     my $form = DJabberd::Form->new($x) if($x);
     my $rsm = DJabberd::Set->new($r);
     $rsm->max($rsm->max + 1) if($rsm->max); # more_data indicator
-    my @msgs = $self->query_archive($user->as_bare_string, $form, $rsm);
+    my @msgs = $self->query_archive($node, $form, $rsm);
     if(@msgs && !defined $msgs[0]) {
 	# rsm before/after freaked out results, need to item-not-found
 	return $iq->send_error("<error type='cancel'><item-not-found xmlns='urn:ietf:params:xml:ns:xmpp-stanzas'/></error>");
