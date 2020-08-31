@@ -208,7 +208,6 @@ sub query {
     my ($x) = grep{$_->element eq '{jabber:x:data}x'}$query->children_elements;
     my ($r) = grep{$_->element eq $DJabberd::Set::Element}$query->children_elements;
     $logger->debug("Query[".$user->as_string."]: ".($x && $x->as_xml || '').($r && $r->as_xml || ''));
-    my $node = $query->attr('{}node');
     my $form = DJabberd::Form->new($x) if($x);
     my $rsm = DJabberd::Set->new($r);
     $rsm->max($rsm->max + 1) if($rsm->max); # more_data indicator
